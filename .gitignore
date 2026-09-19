@@ -1,0 +1,15 @@
+.venv/
+docs
+
+# Runtime output / downloads (destination path is user-supplied)
+.temp/
+*.sqlite
+*.sqlite3
+*.db
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/

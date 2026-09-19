@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "capital-bikeshare-extractor"
+version = "0.1.0"
+description = "Download and synchronize Capital Bikeshare trip data into a local SQLite database."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "mcharhbili", email = "charhbili.moad.work@gmail.com" },
+]
+dependencies = [
+    "pandas",
+    "python-dateutil",
+    "PyYAML",
+    "requests",
+    "tqdm",
+]
+
+[project.scripts]
+capital_bikeshare = "capital_bikeshare_extractor.cli:run"
+capital_bikeshare_extractor = "capital_bikeshare_extractor.cli:run"
+
+[tool.setuptools.package-data]
+capital_bikeshare_extractor = ["config.yaml"]
