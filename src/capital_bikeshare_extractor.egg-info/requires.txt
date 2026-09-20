@@ -1,5 +1,0 @@
-pandas
-python-dateutil
-PyYAML
-requests
-tqdm

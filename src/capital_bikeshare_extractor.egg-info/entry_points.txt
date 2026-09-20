@@ -1,3 +1,0 @@
-[console_scripts]
-capital_bikeshare = capital_bikeshare_extractor.cli:run
-capital_bikeshare_extractor = capital_bikeshare_extractor.cli:run
