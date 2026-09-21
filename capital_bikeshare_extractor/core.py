@@ -78,6 +78,7 @@ def sync_period(
     period: str,
     force: bool = False,
     dry_run: bool = False,
+    refresh_enriched: bool = True,
 ) -> SyncResult:
     assert_period(period)
 
@@ -107,7 +108,8 @@ def sync_period(
         rows_deleted, rows_inserted = load_period(
             conn, config, csv_paths, period, entry.key, synced_at
         )
-        refresh_trips_enriched(conn)
+        if refresh_enriched:
+            refresh_trips_enriched(conn)
     finally:
         conn.close()
 
@@ -150,17 +152,33 @@ def sync_range(
         )
 
     results: list[SyncResult] = []
+    any_completed = False
     period = start
     while True:
         result = sync_period(
-            config, db_path, manifest_path, period, force=force, dry_run=dry_run
+            config,
+            db_path,
+            manifest_path,
+            period,
+            force=force,
+            dry_run=dry_run,
+            refresh_enriched=False,
         )
         results.append(result)
+        if result.status == "Completed":
+            any_completed = True
         if result.status not in ("Completed", "already_completed", "skipped_dry_run"):
             break
         if period == end:
             break
         period = _step_period(period)
+
+    if any_completed:
+        conn = sqlite3.connect(db_path)
+        try:
+            refresh_trips_enriched(conn)
+        finally:
+            conn.close()
 
     if not dry_run:
         cleanup_temp_dir(DEFAULT_TEMP_DIR)
@@ -188,9 +206,18 @@ def sync_pending(
     logger.info("sync-pending: %d period(s) to sync: %s", len(pending), ", ".join(pending))
 
     results = []
+    any_completed = False
     for i, period in enumerate(pending, start=1):
         logger.info("sync-pending: [%d/%d] syncing %s", i, len(pending), period)
-        result = sync_period(config, db_path, manifest_path, period, force=force, dry_run=dry_run)
+        result = sync_period(
+            config,
+            db_path,
+            manifest_path,
+            period,
+            force=force,
+            dry_run=dry_run,
+            refresh_enriched=False,
+        )
         logger.info(
             "sync-pending: [%d/%d] %s -> %s (rows_deleted=%d, rows_inserted=%d)",
             i,
@@ -201,6 +228,15 @@ def sync_pending(
             result.rows_inserted,
         )
         results.append(result)
+        if result.status == "Completed":
+            any_completed = True
+
+    if any_completed:
+        conn = sqlite3.connect(db_path)
+        try:
+            refresh_trips_enriched(conn)
+        finally:
+            conn.close()
 
     if not dry_run:
         cleanup_temp_dir(DEFAULT_TEMP_DIR)
