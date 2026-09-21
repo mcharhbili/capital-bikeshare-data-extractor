@@ -15,9 +15,13 @@ download zip -> extract csv -> normalize columns -> raw_trips (SQLite)
                                                           |
 GBFS station_information.json --- upsert ---------->  stations
                                                           |
-                                              trips_enriched (VIEW)
+                                        trips_enriched_view (VIEW)
                                         dedupes cross-month duplicates,
                                         joins live station name/coords
+                                                          |
+                                                  refresh (post-sync)
+                                                          v
+                                          trips_enriched (materialized TABLE, indexed)
 ```
 
 ## Installation
@@ -78,7 +82,9 @@ Global flags: `--db PATH` (default `data/bikeshare.db`), `--manifest PATH` (defa
 
 **`stations`** — a full-refresh upsert of the live GBFS `station_information` feed, keyed by `station_id`. Also stores `short_name`, the legacy numeric station code that historical trip files reference in `start_station_id`/`end_station_id` (GBFS's `station_id` is a UUID, not the code trip data uses).
 
-**`trips_enriched`** (view) — deduplicates `raw_trips` by `ride_id`, keeping only the most-recently-synced copy of any trip that appears twice (cross-month duplicates), while passing through pre-2020 rows that have no `ride_id` unfiltered. Joins to `stations` on either `station_id` or `short_name`, coalescing live station name/coordinates over the trip's own historical values when available.
+**`trips_enriched_view`** (view) — deduplicates `raw_trips` by `ride_id`, keeping only the most-recently-synced copy of any trip that appears twice (cross-month duplicates), while passing through pre-2020 rows that have no `ride_id` unfiltered. Joins to `stations` on either `station_id` or `short_name`, coalescing live station name/coordinates over the trip's own historical values when available.
+
+**`trips_enriched`** (materialized table) — a rebuilt-on-sync snapshot of `trips_enriched_view`, with indexes on `ride_id`, `period`, `start_station_id`, `end_station_id`, and `started_at`. The view re-runs a window function and an `OR`-join over all of `raw_trips` on every query, which gets slow as the table grows, so query `trips_enriched` for normal reads/analysis instead of the view. It's rebuilt automatically after every `sync-period`/`sync-range`/`sync-pending`/`process`/`sync-stations` run (full delete + reinsert inside one transaction, so readers never see a half-built table). If you write to `raw_trips` or `stations` outside those commands, call `refresh_trips_enriched(conn)` yourself before querying `trips_enriched`.
 
 ## Manifest
 

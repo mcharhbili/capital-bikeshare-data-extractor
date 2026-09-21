@@ -7,6 +7,7 @@ directly unit-testable.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,7 +25,10 @@ from capital_bikeshare_extractor.ingest import (
     extract_csvs,
     load_period,
 )
+from capital_bikeshare_extractor.schema import init_db, refresh_trips_enriched
 from capital_bikeshare_extractor.validation import assert_period, is_monthly_period
+
+logger = logging.getLogger(__name__)
 
 
 def now_iso() -> str:
@@ -99,9 +103,11 @@ def sync_period(
     synced_at = now_iso()
     conn = sqlite3.connect(db_path)
     try:
+        init_db(conn)
         rows_deleted, rows_inserted = load_period(
             conn, config, csv_paths, period, entry.key, synced_at
         )
+        refresh_trips_enriched(conn)
     finally:
         conn.close()
 
@@ -175,12 +181,33 @@ def sync_pending(
     if latest_only and pending:
         pending = [sorted(pending)[-1]]
 
-    results = [
-        sync_period(config, db_path, manifest_path, period, force=force, dry_run=dry_run)
-        for period in pending
-    ]
+    if not pending:
+        logger.info("sync-pending: no pending periods, nothing to do")
+        return []
+
+    logger.info("sync-pending: %d period(s) to sync: %s", len(pending), ", ".join(pending))
+
+    results = []
+    for i, period in enumerate(pending, start=1):
+        logger.info("sync-pending: [%d/%d] syncing %s", i, len(pending), period)
+        result = sync_period(config, db_path, manifest_path, period, force=force, dry_run=dry_run)
+        logger.info(
+            "sync-pending: [%d/%d] %s -> %s (rows_deleted=%d, rows_inserted=%d)",
+            i,
+            len(pending),
+            period,
+            result.status,
+            result.rows_deleted,
+            result.rows_inserted,
+        )
+        results.append(result)
 
     if not dry_run:
         cleanup_temp_dir(DEFAULT_TEMP_DIR)
+
+    completed = sum(1 for r in results if r.status == "Completed")
+    logger.info(
+        "sync-pending: done, %d/%d period(s) completed", completed, len(results)
+    )
 
     return results

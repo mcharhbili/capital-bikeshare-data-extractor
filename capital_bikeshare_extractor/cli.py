@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sqlite3
 import sys
 from dataclasses import asdict, is_dataclass
@@ -18,7 +19,7 @@ from capital_bikeshare_extractor.config import (
     load_config,
 )
 from capital_bikeshare_extractor.ingest import download_zip, extract_csvs, load_period
-from capital_bikeshare_extractor.schema import init_db
+from capital_bikeshare_extractor.schema import init_db, refresh_trips_enriched
 from capital_bikeshare_extractor.validation import assert_output_format
 
 
@@ -62,6 +63,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default="print",
         choices=["print", "dict", "json"],
         help="How to render command output.",
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable debug-level logging."
     )
 
     sub = parser.add_subparsers(dest="command", required=True)
@@ -193,6 +197,7 @@ def _handle(args: argparse.Namespace) -> object:
                 rows_deleted, rows_inserted = load_period(
                     conn, config, csv_paths, args.period, entry.key, synced_at
                 )
+                refresh_trips_enriched(conn)
             finally:
                 conn.close()
             manifest_mod.mark_completed(data, args.period, synced_at)
@@ -241,6 +246,7 @@ def _handle(args: argparse.Namespace) -> object:
             init_db(conn)
             synced_at = core.now_iso()
             count = stations.sync_stations(config, conn, synced_at)
+            refresh_trips_enriched(conn)
         finally:
             conn.close()
         return {"status": "Completed", "stations_synced": count}
@@ -251,6 +257,12 @@ def _handle(args: argparse.Namespace) -> object:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
 
     try:
         result = _handle(args)
