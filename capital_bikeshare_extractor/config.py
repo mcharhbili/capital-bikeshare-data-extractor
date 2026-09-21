@@ -20,7 +20,9 @@ REQUIRED_KEYS = (
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_MANIFEST_PATH = DEFAULT_DATA_DIR / "manifest.json"
 DEFAULT_DB_PATH = DEFAULT_DATA_DIR / "bikeshare.db"
+DEFAULT_PARQUET_DIR = DEFAULT_DATA_DIR / "parquet"
 DEFAULT_TEMP_DIR = Path(".temp")
+STORAGE_BACKENDS = ["sqlite", "parquet"]
 
 
 @dataclass(frozen=True)

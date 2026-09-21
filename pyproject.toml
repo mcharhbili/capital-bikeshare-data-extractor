@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "capital-bikeshare-extractor"
 version = "0.1.0"
-description = "CLI tool to extract, normalize, and load Capital Bikeshare trip data into SQLite, enriched with live GBFS station data."
+description = "CLI tool to extract, normalize, and load Capital Bikeshare trip data into SQLite or Parquet, enriched with live GBFS station data."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -16,6 +16,7 @@ dependencies = [
     "pandas>=2.0",
     "python-dateutil>=2.8",
     "tqdm>=4.66",
+    "pyarrow>=14.0",
 ]
 
 [project.optional-dependencies]

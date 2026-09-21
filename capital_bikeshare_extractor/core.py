@@ -8,7 +8,6 @@ directly unit-testable.
 from __future__ import annotations
 
 import logging
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,9 +22,8 @@ from capital_bikeshare_extractor.ingest import (
     cleanup_temp_dir,
     download_zip,
     extract_csvs,
-    load_period,
 )
-from capital_bikeshare_extractor.schema import init_db
+from capital_bikeshare_extractor.store import Store
 from capital_bikeshare_extractor.validation import assert_period, is_monthly_period
 
 logger = logging.getLogger(__name__)
@@ -73,7 +71,7 @@ def plan_sync(
 
 def sync_period(
     config: Config,
-    db_path: Path,
+    store: Store,
     manifest_path: Path,
     period: str,
     force: bool = False,
@@ -101,14 +99,10 @@ def sync_period(
     csv_paths = extract_csvs(zip_path, temp_dir, force=force)
 
     synced_at = now_iso()
-    conn = sqlite3.connect(db_path)
-    try:
-        init_db(conn)
-        rows_deleted, rows_inserted = load_period(
-            conn, config, csv_paths, period, entry.key, synced_at
-        )
-    finally:
-        conn.close()
+    store.init()
+    rows_deleted, rows_inserted = store.load_period(
+        config, csv_paths, period, entry.key, synced_at
+    )
 
     manifest_mod.mark_completed(data, period, synced_at)
     manifest_mod.save(manifest_path, data, now_iso())
@@ -134,7 +128,7 @@ def _step_period(period: str) -> str:
 
 def sync_range(
     config: Config,
-    db_path: Path,
+    store: Store,
     manifest_path: Path,
     start: str,
     end: str,
@@ -153,7 +147,7 @@ def sync_range(
     while True:
         result = sync_period(
             config,
-            db_path,
+            store,
             manifest_path,
             period,
             force=force,
@@ -174,7 +168,7 @@ def sync_range(
 
 def sync_pending(
     config: Config,
-    db_path: Path,
+    store: Store,
     manifest_path: Path,
     latest_only: bool = False,
     force: bool = False,
@@ -196,7 +190,7 @@ def sync_pending(
         logger.info("sync-pending: [%d/%d] syncing %s", i, len(pending), period)
         result = sync_period(
             config,
-            db_path,
+            store,
             manifest_path,
             period,
             force=force,

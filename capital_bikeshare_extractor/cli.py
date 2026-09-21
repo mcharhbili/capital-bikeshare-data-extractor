@@ -6,20 +6,21 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sqlite3
 import sys
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
-from capital_bikeshare_extractor import core, manifest as manifest_mod, s3_discovery, stations
+from capital_bikeshare_extractor import core, manifest as manifest_mod, s3_discovery
 from capital_bikeshare_extractor.config import (
     DEFAULT_DB_PATH,
     DEFAULT_MANIFEST_PATH,
+    DEFAULT_PARQUET_DIR,
     DEFAULT_TEMP_DIR,
+    STORAGE_BACKENDS,
     load_config,
 )
-from capital_bikeshare_extractor.ingest import download_zip, extract_csvs, load_period
-from capital_bikeshare_extractor.schema import init_db
+from capital_bikeshare_extractor.ingest import download_zip, extract_csvs
+from capital_bikeshare_extractor.store import make_store
 from capital_bikeshare_extractor.validation import assert_output_format
 
 
@@ -54,7 +55,18 @@ def _format_error_chain(exc: BaseException) -> str:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cbse", description="Capital Bikeshare data extractor")
-    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to the SQLite database.")
+    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to the SQLite database (sqlite backend only).")
+    parser.add_argument(
+        "--data-dir",
+        default=str(DEFAULT_PARQUET_DIR),
+        help="Root directory for Parquet output (parquet backend only).",
+    )
+    parser.add_argument(
+        "--backend",
+        default="sqlite",
+        choices=STORAGE_BACKENDS,
+        help="Storage backend to write trip/station data to.",
+    )
     parser.add_argument(
         "--manifest", default=str(DEFAULT_MANIFEST_PATH), help="Path to the JSON manifest."
     )
@@ -125,7 +137,9 @@ def _handle(args: argparse.Namespace) -> object:
     config = load_config()
     assert_output_format(args.output_format, config.supported_output_formats)
     db_path = Path(args.db)
+    data_dir = Path(args.data_dir)
     manifest_path = Path(args.manifest)
+    store = make_store(args.backend, db_path, data_dir)
 
     if args.command == "list-files":
         periods, unclassified = s3_discovery.discover_periods(config)
@@ -157,15 +171,11 @@ def _handle(args: argparse.Namespace) -> object:
         return {"pending": pending}
 
     if args.command == "init-db":
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        if args.force and db_path.exists():
+        if args.backend == "sqlite" and args.force and db_path.exists():
             db_path.unlink()
-        conn = sqlite3.connect(db_path)
-        try:
-            init_db(conn)
-        finally:
-            conn.close()
-        return {"db": str(db_path), "status": "initialized"}
+        store.init()
+        target = str(db_path) if args.backend == "sqlite" else str(data_dir)
+        return {"backend": args.backend, "target": target, "status": "initialized"}
 
     if args.command in ("download", "extract", "process"):
         data = manifest_mod.load(manifest_path)
@@ -189,16 +199,11 @@ def _handle(args: argparse.Namespace) -> object:
         if args.command == "process":
             temp_dir = DEFAULT_TEMP_DIR / args.period
             csv_paths = list(temp_dir.rglob("*.csv"))
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(db_path)
-            try:
-                init_db(conn)
-                synced_at = core.now_iso()
-                rows_deleted, rows_inserted = load_period(
-                    conn, config, csv_paths, args.period, entry.key, synced_at
-                )
-            finally:
-                conn.close()
+            store.init()
+            synced_at = core.now_iso()
+            rows_deleted, rows_inserted = store.load_period(
+                config, csv_paths, args.period, entry.key, synced_at
+            )
             manifest_mod.mark_completed(data, args.period, synced_at)
             manifest_mod.save(manifest_path, data, core.now_iso())
             return {
@@ -209,14 +214,14 @@ def _handle(args: argparse.Namespace) -> object:
 
     if args.command == "sync-period":
         result = core.sync_period(
-            config, db_path, manifest_path, args.period, force=args.force, dry_run=args.dry_run
+            config, store, manifest_path, args.period, force=args.force, dry_run=args.dry_run
         )
         return result
 
     if args.command == "sync-range":
         results = core.sync_range(
             config,
-            db_path,
+            store,
             manifest_path,
             args.start,
             args.end,
@@ -228,7 +233,7 @@ def _handle(args: argparse.Namespace) -> object:
     if args.command == "sync-pending":
         results = core.sync_pending(
             config,
-            db_path,
+            store,
             manifest_path,
             latest_only=args.latest_only,
             force=args.force,
@@ -239,14 +244,9 @@ def _handle(args: argparse.Namespace) -> object:
     if args.command == "sync-stations":
         if args.dry_run:
             return {"status": "skipped_dry_run"}
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(db_path)
-        try:
-            init_db(conn)
-            synced_at = core.now_iso()
-            count = stations.sync_stations(config, conn, synced_at)
-        finally:
-            conn.close()
+        store.init()
+        synced_at = core.now_iso()
+        count = store.sync_stations(config, synced_at)
         return {"status": "Completed", "stations_synced": count}
 
     raise ValueError(f"Unhandled command: {args.command}")

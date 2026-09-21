@@ -12,8 +12,21 @@ def _seed_manifest(manifest_path, period, key="k.zip"):
     return data
 
 
+class _FakeStore:
+    """No-op Store stand-in so core tests don't need a real backend."""
+
+    def init(self):
+        pass
+
+    def load_period(self, config, csv_paths, period, source_key, synced_at):
+        return (0, len(csv_paths))
+
+    def sync_stations(self, config, synced_at):
+        return 0
+
+
 def _patch_pipeline(monkeypatch, tmp_path, period, key):
-    """Stub download/extract/load so sync_period runs without network or a real DB,
+    """Stub download/extract so sync_period runs without network or a real DB,
     while still creating the .temp files cleanup is expected to remove."""
     zip_path = tmp_path / ".temp" / key
     extract_dir = tmp_path / ".temp" / period
@@ -29,12 +42,8 @@ def _patch_pipeline(monkeypatch, tmp_path, period, key):
         csv_path.write_text("a,b\n1,2\n", encoding="utf-8")
         return [csv_path]
 
-    def fake_load_period(conn, config, csv_paths, period_, source_key, synced_at):
-        return (0, len(csv_paths))
-
     monkeypatch.setattr(core, "download_zip", fake_download_zip)
     monkeypatch.setattr(core, "extract_csvs", fake_extract_csvs)
-    monkeypatch.setattr(core, "load_period", fake_load_period)
     monkeypatch.setattr(core, "DEFAULT_TEMP_DIR", tmp_path / ".temp")
 
     return zip_path, extract_dir
@@ -44,12 +53,11 @@ def test_sync_period_cleans_up_its_own_temp_files(monkeypatch, tmp_path, config)
     period = "2023-01"
     key = "k.zip"
     manifest_path = tmp_path / "manifest.json"
-    db_path = tmp_path / "db.sqlite"
     _seed_manifest(manifest_path, period, key)
 
     zip_path, extract_dir = _patch_pipeline(monkeypatch, tmp_path, period, key)
 
-    result = core.sync_period(config, db_path, manifest_path, period)
+    result = core.sync_period(config, _FakeStore(), manifest_path, period)
 
     assert result.status == "Completed"
     assert not zip_path.exists()
@@ -60,7 +68,6 @@ def test_sync_pending_sweeps_temp_dir_when_done(monkeypatch, tmp_path, config):
     period = "2023-01"
     key = "k.zip"
     manifest_path = tmp_path / "manifest.json"
-    db_path = tmp_path / "db.sqlite"
     _seed_manifest(manifest_path, period, key)
 
     temp_dir = tmp_path / ".temp"
@@ -81,6 +88,6 @@ def test_sync_pending_sweeps_temp_dir_when_done(monkeypatch, tmp_path, config):
     stray_dir.mkdir(parents=True, exist_ok=True)
     (stray_dir / "stray.txt").write_text("x", encoding="utf-8")
 
-    core.sync_pending(config, db_path, manifest_path)
+    core.sync_pending(config, _FakeStore(), manifest_path)
 
     assert not temp_dir.exists()
