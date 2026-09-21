@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "capital-bikeshare-extractor"
+version = "0.1.0"
+description = "CLI tool to extract, normalize, and load Capital Bikeshare trip data into SQLite, enriched with live GBFS station data."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Moad Charhbili", email = "charhbili.moad.work@gmail.com" }]
+dependencies = [
+    "requests>=2.31",
+    "PyYAML>=6.0",
+    "pandas>=2.0",
+    "python-dateutil>=2.8",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "responses>=0.25"]
+
+[project.scripts]
+cbse = "capital_bikeshare_extractor.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["capital_bikeshare_extractor*"]
+
+[tool.setuptools.package-data]
+capital_bikeshare_extractor = ["config.yaml"]

@@ -1,5 +1,6 @@
 .venv/
 docs
+data/
 
 # Runtime output / downloads (destination path is user-supplied)
 .temp/
@@ -13,3 +14,4 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+.pytest_cache/

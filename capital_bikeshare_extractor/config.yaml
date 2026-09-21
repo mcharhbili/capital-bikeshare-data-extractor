@@ -1,0 +1,50 @@
+s3_list_url: "https://s3.amazonaws.com/capitalbikeshare-data?list-type=2"
+s3_object_url: "https://s3.amazonaws.com/capitalbikeshare-data/{key}"
+
+gbfs_station_information_url: "https://gbfs.lyft.com/gbfs/1.1/dca-cabi/en/station_information.json"
+
+supported_output_formats:
+  - print
+  - dict
+  - json
+
+backend_extensions:
+  - .db
+  - .sqlite
+  - .sqlite3
+
+# Maps every observed CSV header (across all historical file eras) to the
+# canonical raw_trips column name. Includes identity mappings for headers
+# that are already canonical, so the same lookup table serves old and new
+# files uniformly. Header names are stripped of surrounding whitespace
+# before lookup, so trailing-space variants (e.g. a stray "Duration ")
+# don't need a separate entry here.
+column_renames:
+  # Modern (2020+) canonical headers
+  ride_id: ride_id
+  rideable_type: rideable_type
+  started_at: started_at
+  ended_at: ended_at
+  start_station_name: start_station_name
+  start_station_id: start_station_id
+  end_station_name: end_station_name
+  end_station_id: end_station_id
+  start_lat: start_lat
+  start_lng: start_lng
+  end_lat: end_lat
+  end_lng: end_lng
+  member_casual: member_casual
+
+  # Legacy (pre-2020) headers
+  "Duration": duration
+  "Start date": started_at
+  "End date": ended_at
+  "Start station number": start_station_id
+  "Start station": start_station_name
+  "End station number": end_station_id
+  "End station": end_station_name
+  "Bike number": rideable_type
+  "Bike#": rideable_type
+  "Member type": member_casual
+  "Member Type": member_casual
+  "Total duration (ms)": duration
