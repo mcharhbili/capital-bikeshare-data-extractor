@@ -19,7 +19,7 @@ from capital_bikeshare_extractor.config import (
     load_config,
 )
 from capital_bikeshare_extractor.ingest import download_zip, extract_csvs, load_period
-from capital_bikeshare_extractor.schema import init_db, refresh_trips_enriched
+from capital_bikeshare_extractor.schema import init_db
 from capital_bikeshare_extractor.validation import assert_output_format
 
 
@@ -197,7 +197,6 @@ def _handle(args: argparse.Namespace) -> object:
                 rows_deleted, rows_inserted = load_period(
                     conn, config, csv_paths, args.period, entry.key, synced_at
                 )
-                refresh_trips_enriched(conn)
             finally:
                 conn.close()
             manifest_mod.mark_completed(data, args.period, synced_at)
@@ -246,7 +245,6 @@ def _handle(args: argparse.Namespace) -> object:
             init_db(conn)
             synced_at = core.now_iso()
             count = stations.sync_stations(config, conn, synced_at)
-            refresh_trips_enriched(conn)
         finally:
             conn.close()
         return {"status": "Completed", "stations_synced": count}

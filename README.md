@@ -1,6 +1,6 @@
 # Capital Bikeshare Data Extractor
 
-A Python CLI tool that syncs [Capital Bikeshare](https://capitalbikeshare.com/system-data) trip data from S3 into a local SQLite database, with resumable/incremental tracking and live station enrichment via [GBFS](https://gbfs.org/).
+A Python CLI tool that syncs [Capital Bikeshare](https://capitalbikeshare.com/system-data) trip data from S3 into a local SQLite database, with resumable/incremental tracking and live station data via [GBFS](https://gbfs.org/).
 
 ## Architecture at a glance
 
@@ -12,16 +12,8 @@ manifest.json  <---- diff -----  fresh S3 listing
    |  (new / updated / Completed per period)
    v
 download zip -> extract csv -> normalize columns -> raw_trips (SQLite)
-                                                          |
+
 GBFS station_information.json --- upsert ---------->  stations
-                                                          |
-                                        trips_enriched_view (VIEW)
-                                        dedupes cross-month duplicates,
-                                        joins live station name/coords
-                                                          |
-                                                  refresh (post-sync)
-                                                          v
-                                          trips_enriched (materialized TABLE, indexed)
 ```
 
 ## Installation
@@ -48,10 +40,10 @@ cbse sync-period 2018-01           # sync one month
 cbse sync-stations                 # pull live GBFS station data
 ```
 
-Then query the enriched view:
+Then query the trip data:
 
 ```bash
-sqlite3 data/bikeshare.db "SELECT * FROM trips_enriched LIMIT 5;"
+sqlite3 data/bikeshare.db "SELECT * FROM raw_trips LIMIT 5;"
 ```
 
 ## CLI reference
@@ -81,10 +73,6 @@ Global flags: `--db PATH` (default `data/bikeshare.db`), `--manifest PATH` (defa
 **`raw_trips`** — one row per trip per source file. No uniqueness constraint on `ride_id`: a trip spanning a month boundary can legitimately appear in both its start month's and end month's file. Re-syncing a period deletes and reinserts only that period's rows (scoped by `period` + `source_key`), so re-runs are safe.
 
 **`stations`** — a full-refresh upsert of the live GBFS `station_information` feed, keyed by `station_id`. Also stores `short_name`, the legacy numeric station code that historical trip files reference in `start_station_id`/`end_station_id` (GBFS's `station_id` is a UUID, not the code trip data uses).
-
-**`trips_enriched_view`** (view) — deduplicates `raw_trips` by `ride_id`, keeping only the most-recently-synced copy of any trip that appears twice (cross-month duplicates), while passing through pre-2020 rows that have no `ride_id` unfiltered. Joins to `stations` on either `station_id` or `short_name`, coalescing live station name/coordinates over the trip's own historical values when available.
-
-**`trips_enriched`** (materialized table) — a rebuilt-on-sync snapshot of `trips_enriched_view`, with indexes on `ride_id`, `period`, `start_station_id`, `end_station_id`, and `started_at`. The view re-runs a window function and an `OR`-join over all of `raw_trips` on every query, which gets slow as the table grows, so query `trips_enriched` for normal reads/analysis instead of the view. It's rebuilt automatically after every `sync-period`/`sync-range`/`sync-pending`/`process`/`sync-stations` run (full delete + reinsert inside one transaction, so readers never see a half-built table). If you write to `raw_trips` or `stations` outside those commands, call `refresh_trips_enriched(conn)` yourself before querying `trips_enriched`.
 
 ## Manifest
 
@@ -117,7 +105,6 @@ Tests use in-memory SQLite, `tmp_path`, and mocked HTTP (`responses`) — no liv
 
 - SQLite-only backend, single-threaded downloads.
 - GBFS URL is hardcoded to Lyft's `dca-cabi` feed rather than resolved via GBFS auto-discovery.
-- Retired/renamed stations not present in the current GBFS feed won't be enriched (trip data still falls back to its own historical coordinates where present).
 
 ## License
 
