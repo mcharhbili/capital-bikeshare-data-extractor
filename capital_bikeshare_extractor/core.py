@@ -17,7 +17,13 @@ from dateutil.relativedelta import relativedelta
 from capital_bikeshare_extractor import manifest as manifest_mod
 from capital_bikeshare_extractor import s3_discovery
 from capital_bikeshare_extractor.config import Config, DEFAULT_TEMP_DIR
-from capital_bikeshare_extractor.ingest import download_zip, extract_csvs, load_period
+from capital_bikeshare_extractor.ingest import (
+    cleanup_period_temp,
+    cleanup_temp_dir,
+    download_zip,
+    extract_csvs,
+    load_period,
+)
 from capital_bikeshare_extractor.validation import assert_period, is_monthly_period
 
 
@@ -102,6 +108,8 @@ def sync_period(
     manifest_mod.mark_completed(data, period, synced_at)
     manifest_mod.save(manifest_path, data, now_iso())
 
+    cleanup_period_temp(zip_path, temp_dir)
+
     return SyncResult(
         period=period,
         status="Completed",
@@ -148,6 +156,9 @@ def sync_range(
             break
         period = _step_period(period)
 
+    if not dry_run:
+        cleanup_temp_dir(DEFAULT_TEMP_DIR)
+
     return results
 
 
@@ -164,7 +175,12 @@ def sync_pending(
     if latest_only and pending:
         pending = [sorted(pending)[-1]]
 
-    return [
+    results = [
         sync_period(config, db_path, manifest_path, period, force=force, dry_run=dry_run)
         for period in pending
     ]
+
+    if not dry_run:
+        cleanup_temp_dir(DEFAULT_TEMP_DIR)
+
+    return results

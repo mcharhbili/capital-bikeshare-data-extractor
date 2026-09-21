@@ -7,6 +7,7 @@ period never errors on conflict and never leaves partial data on failure.
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 import zipfile
 from pathlib import Path
@@ -55,6 +56,17 @@ def extract_csvs(zip_path: Path, extract_dir: Path, force: bool = False) -> list
                 zf.extract(name, extract_dir)
 
     return list(extract_dir.rglob("*.csv"))
+
+
+def cleanup_period_temp(zip_path: Path, extract_dir: Path) -> None:
+    """Remove a period's downloaded ZIP and extracted CSVs from .temp."""
+    zip_path.unlink(missing_ok=True)
+    shutil.rmtree(extract_dir, ignore_errors=True)
+
+
+def cleanup_temp_dir(temp_dir: Path) -> None:
+    """Remove the entire .temp directory tree, if present."""
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def load_period(
