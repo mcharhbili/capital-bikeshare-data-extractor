@@ -27,12 +27,6 @@ Requires Python 3.10+.
 pip install -e .
 ```
 
-For running the test suite:
-
-```bash
-pip install -e ".[dev]"
-```
-
 ## Quickstart
 
 ```bash
@@ -67,7 +61,7 @@ python -c "import pandas as pd; print(pd.read_parquet('data/parquet/raw_trips').
 
 ## CLI reference
 
-Global flags: `--backend {sqlite,parquet}` (default `sqlite`), `--db PATH` (default `data/bikeshare.db`, sqlite only), `--data-dir PATH` (default `data/parquet`, parquet only), `--manifest PATH` (default `data/manifest.json`), `--output-format {print,dict,json}`.
+Global flags: `--backend {sqlite,parquet}` (default `sqlite`), `--db PATH` (default `data/bikeshare.db`, sqlite only), `--data-dir PATH` (default `data/parquet`, parquet only), `--manifest PATH` (default `data/manifest.json`), `--output-format {print,dict,json}` (default `print`), `-v/--verbose` (debug logging).
 
 | Subcommand | Arguments | Description |
 |---|---|---|
@@ -81,17 +75,17 @@ Global flags: `--backend {sqlite,parquet}` (default `sqlite`), `--db PATH` (defa
 | `extract` | `period`, `--force` | Extract a downloaded ZIP archive |
 | `process` | `period`, `--force` | Normalize + load an extracted period into the active backend |
 | `sync-period` | `period`, `--force`, `--dry-run` | Download, extract, normalize, and load one period |
-| `sync-range` | `start`, `end`, `--force`, `--dry-run` | Sync a contiguous range of periods |
-| `sync-pending` | `--latest-only`, `--force`, `--dry-run` | Sync everything the manifest marks as pending |
+| `sync-range` | `start`, `end`, `--force`, `--dry-run` | Sync a contiguous range of periods (both endpoints must be the same kind — both yearly or both monthly) |
+| `sync-pending` | `--latest-only`, `--force`, `--dry-run` | Sync everything the manifest marks as pending (new + updated) |
 | `sync-stations` | `--dry-run` | Refresh live GBFS station data |
 
-`--force` bypasses the manifest's "already completed" short-circuit and re-syncs anyway. `--dry-run` reports what would happen without downloading or writing anything.
+`--force` bypasses the manifest's "already completed" short-circuit and re-syncs anyway. `--dry-run` reports what would happen without downloading or writing anything. `period` is either `YYYY` (pre-2018 yearly files) or `YYYY-MM` (2018+ monthly files).
 
 ## Storage backends
 
 Both backends store the same normalized columns; pick whichever fits your workflow. The manifest (`data/manifest.json`) tracks sync progress independently of backend, but is not shared between backend choices for the same period — switching backends re-syncs from scratch under the new backend's storage.
 
-**`sqlite` (default)** — a single-file `raw_trips`/`stations` database, good for ad-hoc SQL queries and small-to-medium datasets. Re-syncing a period deletes and reinserts only that period's rows (scoped by `period` + `source_key`) inside one transaction.
+**`sqlite` (default)** — a single-file `raw_trips`/`stations` database, good for ad-hoc SQL queries and small-to-medium datasets. Re-syncing a period deletes and reinserts only that period's rows (scoped by `period` + `source_key`) inside one transaction, so a crash mid-sync can't leave the period half-deleted.
 
 **`parquet`** — a directory tree good for analytics (pandas/DuckDB/Spark) over large trip histories:
 
@@ -111,9 +105,9 @@ Each period is written as a single file, replaced wholesale on re-sync (write-to
 
 ## Data model
 
-**`raw_trips`** — one row per trip per source file. No uniqueness constraint on `ride_id`: a trip spanning a month boundary can legitimately appear in both its start month's and end month's file.
+**`raw_trips`** — one row per trip per source file: `ride_id`, `rideable_type`, `started_at`, `ended_at`, `start_station_id`, `start_station_name`, `end_station_id`, `end_station_name`, `start_lat`, `start_lng`, `end_lat`, `end_lng`, `member_casual`, `duration`, plus provenance columns `period`, `source_key`, `synced_at`. No uniqueness constraint on `ride_id`: a trip spanning a month boundary can legitimately appear in both its start month's and end month's file.
 
-**`stations`** — a full-refresh upsert of the live GBFS `station_information` feed, keyed by `station_id`. Also stores `short_name`, the legacy numeric station code that historical trip files reference in `start_station_id`/`end_station_id` (GBFS's `station_id` is a UUID, not the code trip data uses).
+**`stations`** — a full-refresh upsert of the live GBFS `station_information` feed, keyed by `station_id`: `short_name`, `name`, `lat`, `lon`, `capacity`, `updated_at`. `short_name` is the legacy numeric station code that historical trip files reference in `start_station_id`/`end_station_id` (GBFS's `station_id` is a UUID, not the code trip data uses).
 
 ## Manifest
 
@@ -123,7 +117,7 @@ Each period is written as a single file, replaced wholesale on re-sync (write-to
 - `updated` — synced before, but the file has changed on S3 since (reopens a `Completed` period)
 - `Completed` — synced and unchanged since
 
-The manifest is only marked `Completed` after a period's database transaction commits, so it never claims a sync succeeded if it didn't.
+`sync-pending`/`plan` treat `new` and `updated` periods as pending. The manifest is only marked `Completed` after a period's database transaction commits, so it never claims a sync succeeded if it didn't. Periods that disappear from the S3 listing are left untouched in the manifest — local data for them is never deleted based on a diff.
 
 ## Configuration
 
@@ -131,16 +125,7 @@ The manifest is only marked `Completed` after a period's database transaction co
 
 ## Schema drift / error handling
 
-If a CSV contains a column not present in `column_renames`, the load aborts immediately with an error listing the offending column name(s) and source file — it never silently drops unrecognized data. Add the missing mapping to `config.yaml` and re-run.
-
-## Development
-
-```bash
-pip install -e ".[dev]"
-pytest
-```
-
-Tests use in-memory SQLite, `tmp_path`, and mocked HTTP (`responses`) — no live network or real disk state required.
+If a CSV contains a column not present in `column_renames`, the load aborts immediately with an error listing the offending column name(s) and source file — it never silently drops unrecognized data. Add the missing mapping to `config.yaml` and re-run. Likewise, S3 object keys that don't match either the yearly or monthly naming convention are surfaced as `unclassified_keys` (via `list-files`) rather than silently skipped.
 
 ## Known limitations
 
