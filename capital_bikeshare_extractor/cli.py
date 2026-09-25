@@ -12,11 +12,9 @@ from pathlib import Path
 
 from capital_bikeshare_extractor import core, manifest as manifest_mod, s3_discovery
 from capital_bikeshare_extractor.config import (
-    DEFAULT_DB_PATH,
     DEFAULT_MANIFEST_PATH,
     DEFAULT_PARQUET_DIR,
     DEFAULT_TEMP_DIR,
-    STORAGE_BACKENDS,
     load_config,
 )
 from capital_bikeshare_extractor.ingest import download_zip, extract_csvs
@@ -55,17 +53,10 @@ def _format_error_chain(exc: BaseException) -> str:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cbse", description="Capital Bikeshare data extractor")
-    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to the SQLite database (sqlite backend only).")
     parser.add_argument(
         "--data-dir",
         default=str(DEFAULT_PARQUET_DIR),
-        help="Root directory for Parquet output (parquet backend only).",
-    )
-    parser.add_argument(
-        "--backend",
-        default="sqlite",
-        choices=STORAGE_BACKENDS,
-        help="Storage backend to write trip/station data to.",
+        help="Root directory for Parquet output.",
     )
     parser.add_argument(
         "--manifest", default=str(DEFAULT_MANIFEST_PATH), help="Path to the JSON manifest."
@@ -94,8 +85,7 @@ def _build_parser() -> argparse.ArgumentParser:
     plan_parser = sub.add_parser("plan", help="Preview what sync-pending would do.")
     plan_parser.add_argument("--latest-only", action="store_true")
 
-    init_db_parser = sub.add_parser("init-db", help="Create the database schema.")
-    init_db_parser.add_argument("--force", action="store_true", help="Drop and recreate tables.")
+    sub.add_parser("init-db", help="Create the Parquet output directory.")
 
     download_parser = sub.add_parser("download", help="Download a period's ZIP archive.")
     download_parser.add_argument("period")
@@ -106,7 +96,7 @@ def _build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--force", action="store_true")
 
     process_parser = sub.add_parser(
-        "process", help="Normalize and load an already-extracted period into SQLite."
+        "process", help="Normalize and load an already-extracted period into Parquet."
     )
     process_parser.add_argument("period")
     process_parser.add_argument("--force", action="store_true")
@@ -136,10 +126,9 @@ def _build_parser() -> argparse.ArgumentParser:
 def _handle(args: argparse.Namespace) -> object:
     config = load_config()
     assert_output_format(args.output_format, config.supported_output_formats)
-    db_path = Path(args.db)
     data_dir = Path(args.data_dir)
     manifest_path = Path(args.manifest)
-    store = make_store(args.backend, db_path, data_dir)
+    store = make_store(data_dir)
 
     if args.command == "list-files":
         periods, unclassified = s3_discovery.discover_periods(config)
@@ -171,11 +160,8 @@ def _handle(args: argparse.Namespace) -> object:
         return {"pending": pending}
 
     if args.command == "init-db":
-        if args.backend == "sqlite" and args.force and db_path.exists():
-            db_path.unlink()
         store.init()
-        target = str(db_path) if args.backend == "sqlite" else str(data_dir)
-        return {"backend": args.backend, "target": target, "status": "initialized"}
+        return {"target": str(data_dir), "status": "initialized"}
 
     if args.command in ("download", "extract", "process"):
         data = manifest_mod.load(manifest_path)

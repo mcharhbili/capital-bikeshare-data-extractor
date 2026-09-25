@@ -1,8 +1,7 @@
-"""Fetches the live GBFS station_information feed and upserts it into stations."""
+"""Fetches the live GBFS station_information feed."""
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 
 from capital_bikeshare_extractor.config import Config
@@ -37,32 +36,3 @@ def fetch_station_information(config: Config) -> list[StationRecord]:
             )
         )
     return stations
-
-
-def upsert_stations(
-    conn: sqlite3.Connection, stations: list[StationRecord], synced_at: str
-) -> int:
-    conn.executemany(
-        """
-        INSERT INTO stations (station_id, short_name, name, lat, lon, capacity, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(station_id) DO UPDATE SET
-            short_name = excluded.short_name,
-            name = excluded.name,
-            lat = excluded.lat,
-            lon = excluded.lon,
-            capacity = excluded.capacity,
-            updated_at = excluded.updated_at
-        """,
-        [
-            (s.station_id, s.short_name, s.name, s.lat, s.lon, s.capacity, synced_at)
-            for s in stations
-        ],
-    )
-    conn.commit()
-    return len(stations)
-
-
-def sync_stations(config: Config, conn: sqlite3.Connection, synced_at: str) -> int:
-    stations = fetch_station_information(config)
-    return upsert_stations(conn, stations, synced_at)

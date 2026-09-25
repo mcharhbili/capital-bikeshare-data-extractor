@@ -13,16 +13,13 @@ REQUIRED_KEYS = (
     "s3_object_url",
     "gbfs_station_information_url",
     "supported_output_formats",
-    "backend_extensions",
     "column_renames",
 )
 
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_MANIFEST_PATH = DEFAULT_DATA_DIR / "manifest.json"
-DEFAULT_DB_PATH = DEFAULT_DATA_DIR / "bikeshare.db"
 DEFAULT_PARQUET_DIR = DEFAULT_DATA_DIR / "parquet"
 DEFAULT_TEMP_DIR = Path(".temp")
-STORAGE_BACKENDS = ["sqlite", "parquet"]
 
 
 @dataclass(frozen=True)
@@ -31,7 +28,6 @@ class Config:
     s3_object_url: str
     gbfs_station_information_url: str
     supported_output_formats: list[str]
-    backend_extensions: list[str]
     column_renames: dict[str, str]
 
 
@@ -62,7 +58,6 @@ def load_config() -> Config:
         s3_object_url=data["s3_object_url"],
         gbfs_station_information_url=data["gbfs_station_information_url"],
         supported_output_formats=list(data["supported_output_formats"]),
-        backend_extensions=list(data["backend_extensions"]),
         column_renames={
             str(k).strip(): str(v).strip() for k, v in data["column_renames"].items()
         },

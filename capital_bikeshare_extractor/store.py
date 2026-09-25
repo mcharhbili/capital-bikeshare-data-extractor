@@ -1,25 +1,18 @@
-"""Storage backends: SQLite (single-file DB) or Parquet (partitioned by
-year/month). Both expose the same Store interface so core.py/cli.py don't
-need to know which one is active.
+"""Parquet storage backend: raw_trips partitioned by year/month, stations as
+a single full-refresh file. Exposes the Store interface core.py/cli.py use.
 """
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 from typing import Protocol
 
 import pandas as pd
 
 from capital_bikeshare_extractor.config import Config
-from capital_bikeshare_extractor.ingest import load_period as _sqlite_load_period
 from capital_bikeshare_extractor.normalize import normalize_dataframe
-from capital_bikeshare_extractor.schema import RAW_TRIPS_COLUMNS, init_db
-from capital_bikeshare_extractor.stations import (
-    StationRecord,
-    fetch_station_information,
-    upsert_stations,
-)
+from capital_bikeshare_extractor.schema import RAW_TRIPS_COLUMNS
+from capital_bikeshare_extractor.stations import fetch_station_information
 
 STATIONS_COLUMNS = [
     "station_id",
@@ -33,7 +26,7 @@ STATIONS_COLUMNS = [
 
 
 class Store(Protocol):
-    """Backend-agnostic persistence for raw_trips and stations."""
+    """Persistence interface for raw_trips and stations."""
 
     def init(self) -> None: ...
 
@@ -49,45 +42,6 @@ class Store(Protocol):
     def sync_stations(self, config: Config, synced_at: str) -> int: ...
 
 
-class SqliteStore:
-    """Wraps the existing sqlite3 raw_trips/stations tables."""
-
-    def __init__(self, db_path: Path):
-        self.db_path = Path(db_path)
-
-    def init(self) -> None:
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.db_path)
-        try:
-            init_db(conn)
-        finally:
-            conn.close()
-
-    def load_period(
-        self,
-        config: Config,
-        csv_paths: list[Path],
-        period: str,
-        source_key: str,
-        synced_at: str,
-    ) -> tuple[int, int]:
-        conn = sqlite3.connect(self.db_path)
-        try:
-            init_db(conn)
-            return _sqlite_load_period(conn, config, csv_paths, period, source_key, synced_at)
-        finally:
-            conn.close()
-
-    def sync_stations(self, config: Config, synced_at: str) -> int:
-        conn = sqlite3.connect(self.db_path)
-        try:
-            init_db(conn)
-            stations = fetch_station_information(config)
-            return upsert_stations(conn, stations, synced_at)
-        finally:
-            conn.close()
-
-
 def _period_year_month(period: str) -> tuple[str, str]:
     """Split a 'YYYY' or 'YYYY-MM' period into (year, month), defaulting
     month to '00' for yearly (pre-2018) periods that have no month."""
@@ -101,8 +55,8 @@ def _period_year_month(period: str) -> tuple[str, str]:
 class ParquetStore:
     """Writes raw_trips as one Parquet file per period, partitioned into
     year=YYYY/month=MM/ directories under `data_dir/raw_trips/`. Re-syncing
-    a period overwrites its file wholesale (mirroring the sqlite backend's
-    delete+reinsert), so this stays idempotent without append-time dedup.
+    a period overwrites its file wholesale, so this stays idempotent without
+    append-time dedup.
 
     stations is a full-refresh upsert, kept as a single small file at
     `data_dir/stations.parquet` rather than partitioned.
@@ -185,9 +139,5 @@ class ParquetStore:
         return len(stations)
 
 
-def make_store(backend: str, db_path: Path, data_dir: Path) -> Store:
-    if backend == "sqlite":
-        return SqliteStore(db_path)
-    if backend == "parquet":
-        return ParquetStore(data_dir)
-    raise ValueError(f"Unknown storage backend {backend!r}: expected 'sqlite' or 'parquet'.")
+def make_store(data_dir: Path) -> Store:
+    return ParquetStore(data_dir)

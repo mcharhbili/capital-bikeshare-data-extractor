@@ -8,11 +8,6 @@ supported_output_formats:
   - dict
   - json
 
-backend_extensions:
-  - .db
-  - .sqlite
-  - .sqlite3
-
 # Maps every observed CSV header (across all historical file eras) to the
 # canonical raw_trips column name. Includes identity mappings for headers
 # that are already canonical, so the same lookup table serves old and new
