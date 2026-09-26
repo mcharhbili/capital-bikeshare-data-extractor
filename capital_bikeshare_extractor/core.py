@@ -76,6 +76,7 @@ def sync_period(
     period: str,
     force: bool = False,
     dry_run: bool = False,
+    temp_dir: Path = DEFAULT_TEMP_DIR,
 ) -> SyncResult:
     assert_period(period)
 
@@ -94,9 +95,9 @@ def sync_period(
     if dry_run:
         return SyncResult(period=period, status="skipped_dry_run")
 
-    temp_dir = DEFAULT_TEMP_DIR / period
-    zip_path = download_zip(config, entry.key, DEFAULT_TEMP_DIR, force=force)
-    csv_paths = extract_csvs(zip_path, temp_dir, force=force)
+    period_temp_dir = temp_dir / period
+    zip_path = download_zip(config, entry.key, temp_dir, force=force)
+    csv_paths = extract_csvs(zip_path, period_temp_dir, force=force)
 
     synced_at = now_iso()
     store.init()
@@ -107,7 +108,7 @@ def sync_period(
     manifest_mod.mark_completed(data, period, synced_at)
     manifest_mod.save(manifest_path, data, now_iso())
 
-    cleanup_period_temp(zip_path, temp_dir)
+    cleanup_period_temp(zip_path, period_temp_dir)
 
     return SyncResult(
         period=period,
@@ -134,6 +135,7 @@ def sync_range(
     end: str,
     force: bool = False,
     dry_run: bool = False,
+    temp_dir: Path = DEFAULT_TEMP_DIR,
 ) -> list[SyncResult]:
     assert_period(start)
     assert_period(end)
@@ -152,6 +154,7 @@ def sync_range(
             period,
             force=force,
             dry_run=dry_run,
+            temp_dir=temp_dir,
         )
         results.append(result)
         if result.status not in ("Completed", "already_completed", "skipped_dry_run"):
@@ -161,7 +164,7 @@ def sync_range(
         period = _step_period(period)
 
     if not dry_run:
-        cleanup_temp_dir(DEFAULT_TEMP_DIR)
+        cleanup_temp_dir(temp_dir)
 
     return results
 
@@ -173,6 +176,7 @@ def sync_pending(
     latest_only: bool = False,
     force: bool = False,
     dry_run: bool = False,
+    temp_dir: Path = DEFAULT_TEMP_DIR,
 ) -> list[SyncResult]:
     _data, result = refresh_manifest(config, manifest_path)
     pending = result.pending
@@ -195,6 +199,7 @@ def sync_pending(
             period,
             force=force,
             dry_run=dry_run,
+            temp_dir=temp_dir,
         )
         logger.info(
             "sync-pending: [%d/%d] %s -> %s (rows_deleted=%d, rows_inserted=%d)",
@@ -208,7 +213,7 @@ def sync_pending(
         results.append(result)
 
     if not dry_run:
-        cleanup_temp_dir(DEFAULT_TEMP_DIR)
+        cleanup_temp_dir(temp_dir)
 
     completed = sum(1 for r in results if r.status == "Completed")
     logger.info(

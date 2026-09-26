@@ -62,6 +62,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--manifest", default=str(DEFAULT_MANIFEST_PATH), help="Path to the JSON manifest."
     )
     parser.add_argument(
+        "--temp-dir",
+        default=str(DEFAULT_TEMP_DIR),
+        help="Directory for staging downloads and extracted CSVs.",
+    )
+    parser.add_argument(
         "--output-format",
         default="print",
         choices=["print", "dict", "json"],
@@ -128,6 +133,7 @@ def _handle(args: argparse.Namespace) -> object:
     assert_output_format(args.output_format, config.supported_output_formats)
     data_dir = Path(args.data_dir)
     manifest_path = Path(args.manifest)
+    temp_dir = Path(args.temp_dir)
     store = make_store(data_dir)
 
     if args.command == "list-files":
@@ -173,18 +179,18 @@ def _handle(args: argparse.Namespace) -> object:
                 raise KeyError(f"Period {args.period!r} not found in S3 listing.")
 
         if args.command == "download":
-            zip_path = download_zip(config, entry.key, DEFAULT_TEMP_DIR, force=args.force)
+            zip_path = download_zip(config, entry.key, temp_dir, force=args.force)
             return {"period": args.period, "zip_path": str(zip_path)}
 
         if args.command == "extract":
-            zip_path = DEFAULT_TEMP_DIR / entry.key
-            temp_dir = DEFAULT_TEMP_DIR / args.period
-            csv_paths = extract_csvs(zip_path, temp_dir, force=args.force)
+            zip_path = temp_dir / entry.key
+            period_temp_dir = temp_dir / args.period
+            csv_paths = extract_csvs(zip_path, period_temp_dir, force=args.force)
             return {"period": args.period, "csv_paths": [str(p) for p in csv_paths]}
 
         if args.command == "process":
-            temp_dir = DEFAULT_TEMP_DIR / args.period
-            csv_paths = list(temp_dir.rglob("*.csv"))
+            period_temp_dir = temp_dir / args.period
+            csv_paths = list(period_temp_dir.rglob("*.csv"))
             store.init()
             synced_at = core.now_iso()
             rows_deleted, rows_inserted = store.load_period(
@@ -200,7 +206,13 @@ def _handle(args: argparse.Namespace) -> object:
 
     if args.command == "sync-period":
         result = core.sync_period(
-            config, store, manifest_path, args.period, force=args.force, dry_run=args.dry_run
+            config,
+            store,
+            manifest_path,
+            args.period,
+            force=args.force,
+            dry_run=args.dry_run,
+            temp_dir=temp_dir,
         )
         return result
 
@@ -213,6 +225,7 @@ def _handle(args: argparse.Namespace) -> object:
             args.end,
             force=args.force,
             dry_run=args.dry_run,
+            temp_dir=temp_dir,
         )
         return results
 
@@ -224,6 +237,7 @@ def _handle(args: argparse.Namespace) -> object:
             latest_only=args.latest_only,
             force=args.force,
             dry_run=args.dry_run,
+            temp_dir=temp_dir,
         )
         return results
 

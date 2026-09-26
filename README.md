@@ -44,7 +44,7 @@ python -c "import pandas as pd; print(pd.read_parquet('data/parquet/raw_trips').
 
 ## CLI reference
 
-Global flags: `--data-dir PATH` (default `data/parquet`), `--manifest PATH` (default `data/manifest.json`), `--output-format {print,dict,json}` (default `print`), `-v/--verbose` (debug logging).
+Global flags: `--data-dir PATH` (default `data/parquet`), `--manifest PATH` (default `data/manifest.json`), `--temp-dir PATH` (default `.temp`, staging area for downloads and extracted CSVs), `--output-format {print,dict,json}` (default `print`), `-v/--verbose` (debug logging).
 
 | Subcommand | Arguments | Description |
 |---|---|---|
